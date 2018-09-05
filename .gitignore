@@ -9,6 +9,10 @@
 *.sh
 *.VC.db-*
 
+#Examples
+#########
+examples/ulb/
+
 #Autotools
 #########################
 projects/Linux/Makefile
