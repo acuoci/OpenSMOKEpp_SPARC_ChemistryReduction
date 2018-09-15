@@ -15,6 +15,7 @@
 Dictionary StaticReduction
 {
 		@KineticsFolder 		..\kinetic-mechanisms\POLIMI_C1C3HT_1412-cleaned\kinetics-POLIMI_C1C3HT_1412-cleaned;
+		
 		@Thermodynamics			..\kinetic-mechanisms\POLIMI_C1C3HT_1412-cleaned\POLIMI_TOT_NOX_1412.CKT;
 		@Kinetics				..\kinetic-mechanisms\POLIMI_C1C3HT_1412-cleaned\POLIMI_C1C3HT_1412.cleaned.CKI;
 		@Transport				..\kinetic-mechanisms\POLIMI_C1C3HT_1412-cleaned\POLIMI_TOT_NOX_1412.TRC;
@@ -30,5 +31,6 @@ Dictionary StaticReduction
 		@Epsilon				0.01;
 		@KeySpecies				CH4 O2 N2;
 		@RetainedThreshold		0.0;
+		@TemperatureThreshold	310 K;
 }
 

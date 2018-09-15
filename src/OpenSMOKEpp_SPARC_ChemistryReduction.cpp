@@ -239,6 +239,17 @@ int main(int argc, char** argv)
 	if (dictionaries(main_dictionary_name_).CheckOption("@RetainedThreshold") == true)
 		dictionaries(main_dictionary_name_).ReadDouble("@RetainedThreshold", retained_threshold);
 
+	// Temperature threshold 
+	double T_Threshold = 310.;
+	if (dictionaries(main_dictionary_name_).CheckOption("@TemperatureThreshold") == true)
+	{
+		std::string units;
+		dictionaries(main_dictionary_name_).ReadMeasure("@TemperatureThreshold", T_Threshold, units);
+		if (units == "K")			T_Threshold *= 1.;
+		else if (units == "C")	T_Threshold += 273.15;
+		else OpenSMOKE::FatalErrorMessage("Wrong temperature units");
+	}
+
 	// Pressure 
 	double P = 101325.;
 	if (dictionaries(main_dictionary_name_).CheckOption("@Pressure") == true)
@@ -593,6 +604,7 @@ int main(int argc, char** argv)
 			{
 				drg.SetKeySpecies(key_species);
 				drg.SetEpsilon(epsilon);
+				drg.SetTemperatureThreshold(T_Threshold);
 				//drg.SetEpsilon(EpsilonDRG(T(j)));		// TODO
 
 				for (int k = 0; k < ns; k++)
@@ -678,6 +690,7 @@ int main(int argc, char** argv)
 						OpenSMOKE::DRGEP drgep(thermodynamicsMap, kineticsMap);
 						drgep.SetKeySpecies(key_species);
 						drgep.SetEpsilon(epsilon);
+						drgep.SetTemperatureThreshold(T_Threshold);
 						//drgep.SetEpsilon(EpsilonDRGEP(T(j)));	// TODO
 						drgep.PrepareKineticGraph(key_species);
 

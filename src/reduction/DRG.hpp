@@ -178,6 +178,11 @@ namespace OpenSMOKE
 		epsilon_ = epsilon;
 	}
 
+	void DRG::SetTemperatureThreshold(const double T_threshold)
+	{
+		T_threshold_ = T_threshold;
+	}
+
 	void DRG::Analysis(const double T, const double P_Pa, const OpenSMOKE::OpenSMOKEVectorDouble& c)
 	{
 		PairWiseErrorMatrix(T, P_Pa, c);
@@ -197,8 +202,10 @@ namespace OpenSMOKE
 		kineticsMapXML_.ReactionRates(c.GetHandle());
 		kineticsMapXML_.GiveMeReactionRates(rNet_.GetHandle());	// [kmol/m3/s]
 
-																// Calculate the pair-wise error matrix
+		// Calculate the pair-wise error matrix
 		r_.setZero();
+
+		if (T>T_threshold_)
 		{
 			Eigen::VectorXd numerator_(NS_);
 			Eigen::VectorXd denominator_(NS_);

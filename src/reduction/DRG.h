@@ -84,6 +84,12 @@ namespace OpenSMOKE
 		void SetEpsilon(const double epsilon);
 
 		/**
+		*@brief Sets the temperature threshold
+		*@param epsilon the desired threshold (default 310 K)
+		*/
+		void SetTemperatureThreshold(const double T_threshold);
+
+		/**
 		*@brief Performs the DRG analysis for the given conditions
 		*@param T temperature in K
 		*@param P_Pa pressure in Pa
@@ -126,6 +132,11 @@ namespace OpenSMOKE
 		*/
 		double epsilon() const { return epsilon_; }
 
+		/**
+		*@brief Returns the temperature threshold (in K)
+		*/
+		double T_threshold() const { return T_threshold_; }
+
 	private:
 
 		/**
@@ -156,6 +167,7 @@ namespace OpenSMOKE
 		unsigned int NS_;							/**< total number of species */
 
 		double epsilon_;							/**< threshold value */
+		double T_threshold_;						/**< threshold temperature (in K) */
 
 		unsigned int number_important_species_;					/**< current number of important species */
 		unsigned int number_unimportant_reactions_;				/**< number of unimportant reactions */

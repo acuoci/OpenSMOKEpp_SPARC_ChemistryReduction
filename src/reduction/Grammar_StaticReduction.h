@@ -91,6 +91,11 @@ namespace OpenSMOKE
 																"Threshold value for DRG/DRG-EP Analyses",
 																true));
 
+			AddKeyWord(OpenSMOKE::OpenSMOKE_DictionaryKeyWord("@TemperatureThreshold",
+																OpenSMOKE::SINGLE_MEASURE,
+																"Threshold temperature for DRG/DRG-EP Analyses",
+																true));
+
 			AddKeyWord(OpenSMOKE::OpenSMOKE_DictionaryKeyWord("@RetainedThreshold",
 																OpenSMOKE::SINGLE_DOUBLE,
 																"Threshold value for retaining species",
