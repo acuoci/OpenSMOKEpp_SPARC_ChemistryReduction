@@ -131,6 +131,20 @@ namespace OpenSMOKE
 			local_dic_[j].resize(thermodynamicsMapXML_.NumberOfSpecies());
 	}
 
+	void DRGEP::ResetKineticGraph()
+	{
+		important_species_.resize(NS_);
+		important_reactions_.resize(NR_);
+		number_important_species_ = NS_;
+		number_unimportant_reactions_ = 0;
+
+		scaling_factor_.resize(index_key_species_.size());
+		if (iScaling_ == true) scaling_factor_.reserve(5000);
+
+		target_oic_.resize(0);
+		target_oic_.reserve(5000);
+	}
+
 	void DRGEP::SetKeySpecies(const std::vector<std::string> names_key_species)
 	{
 		names_key_species_ = names_key_species;
@@ -159,6 +173,8 @@ namespace OpenSMOKE
 
 	void DRGEP::Analysis(const double T, const double P_Pa, const OpenSMOKE::OpenSMOKEVectorDouble& c)
 	{
+		ResetKineticGraph();
+
 		// Calculate
 		{
 			OpenSMOKE::OpenSMOKEVectorDouble R(kineticsMapXML_.NumberOfReactions());

@@ -144,6 +144,13 @@ namespace OpenSMOKE
 
 	private:
 
+		/**
+		*@brief Resets the kinetic graph
+		*/
+		void ResetKineticGraph();
+
+	private:
+
 		OpenSMOKE::ThermodynamicsMap_CHEMKIN& thermodynamicsMapXML_;	/**< reference to the thermodynamic map */
 		OpenSMOKE::KineticsMap_CHEMKIN& kineticsMapXML_;		/**< reference to the kinetics map */
 
