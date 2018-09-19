@@ -680,48 +680,64 @@ int main(int argc, char** argv)
 			OpenSMOKE::OpenSMOKEVectorDouble x(ns);
 			OpenSMOKE::OpenSMOKEVectorDouble c(ns);
 
-			for (int jj = 1; jj <= nclusters; jj++)
-			{
-				unsigned int jLocal = 0;
+			Eigen::VectorXi items_cluster(nclusters);
+			items_cluster.setZero();
+			for (int jj = 0; jj < nclusters; jj++)
 				for (int j = 0; j < ndata; j++)
+					if (group(j) == jj+1)
+						items_cluster(jj)++;
+
+			std::vector<Eigen::VectorXi> group_cluster(nclusters);
+			for (int jj = 0; jj < nclusters; jj++)
+				group_cluster[jj].resize(items_cluster(jj));
+
+			items_cluster.setZero();
+			for (int jj = 0; jj < nclusters; jj++)
+				for (int j = 0; j < ndata; j++)
+					if (group(j) == jj + 1)
+						group_cluster[jj](items_cluster(jj)++) = j;
+
+			OpenSMOKE::DRGEP drgep(thermodynamicsMap, kineticsMap);
+			drgep.SetKeySpecies(key_species);
+			drgep.SetEpsilon(epsilon);
+			drgep.SetTemperatureThreshold(T_Threshold);
+			//drgep.SetEpsilon(EpsilonDRGEP(T(j)));	// TODO
+			drgep.PrepareKineticGraph(key_species);
+
+			for (int jj = 0; jj < nclusters; jj++)
+			{
+
+				for (int jLocal = 0; jLocal < group_cluster[jj].size(); jLocal++)
 				{
-					if (group(j) == jj)
+					const int j = group_cluster[jj][jLocal];
+
+					for (int k = 0; k < ns; k++)
+						y[k + 1] = omega(j, k);
+
+					double MW;
+					thermodynamicsMap->MoleFractions_From_MassFractions(x.GetHandle(), MW, y.GetHandle());
+
+					const double threshold_c = 1e-14;
+					const double cTot = P / PhysicalConstants::R_J_kmol / T(j);
+					OpenSMOKE::Product(cTot, x, &c);
+					for (int k = 1; k <= ns; k++)
+						if (c(k) < threshold_c)	c(k) = 0.;
+
+					drgep.Analysis(T(j), P, c);
+
+					number_important_species(j) = drgep.number_important_species();
+					for (int i = 0; i < number_important_species(j); ++i)
 					{
-						OpenSMOKE::DRGEP drgep(thermodynamicsMap, kineticsMap);
-						drgep.SetKeySpecies(key_species);
-						drgep.SetEpsilon(epsilon);
-						drgep.SetTemperatureThreshold(T_Threshold);
-						//drgep.SetEpsilon(EpsilonDRGEP(T(j)));	// TODO
-						drgep.PrepareKineticGraph(key_species);
-
-						for (int k = 0; k < ns; k++)
-							y[k + 1] = omega(j, k);
-
-						double MW;
-						thermodynamicsMap->MoleFractions_From_MassFractions(x.GetHandle(), MW, y.GetHandle());
-
-						const double threshold_c = 1e-14;
-						const double cTot = P / PhysicalConstants::R_J_kmol / T(j);
-						OpenSMOKE::Product(cTot, x, &c);
-						for (int k = 1; k <= ns; k++)
-							if (c(k) < threshold_c)	c(k) = 0.;
-
-						drgep.Analysis(T(j), P, c);
-
-						number_important_species(j) = drgep.number_important_species();
-						for (int i = 0; i < number_important_species(j); ++i)
-						{
-							const unsigned int k = drgep.indices_important_species()[i];
-							important_species(j, k) = 1;
-						}
-
-						if (jLocal == 0)
-							std::cout	<< "Group: " << jj << "/" << nclusters 
-										<< " T: " << T(j) 
-										<< " Species: " << number_important_species(j) 
-										<< " Eps: " << epsilon << std::endl;
-						jLocal++;
+						const unsigned int k = drgep.indices_important_species()[i];
+						important_species(j, k) = 1;
 					}
+
+					if (jLocal == 0)
+						std::cout	<< "Group: " << jj << "/" << nclusters 
+									<< " T: " << T(j) 
+									<< " Species: " << number_important_species(j) 
+									<< " Eps: " << epsilon << std::endl;
+
 				}
 			}
 
