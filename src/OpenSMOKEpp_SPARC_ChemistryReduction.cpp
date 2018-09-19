@@ -34,6 +34,11 @@
 |                                                                         |
 \*-----------------------------------------------------------------------*/
 
+// Include OpenMP Header file
+#if defined(_OPENMP)
+#include <omp.h>
+#endif
+
 // Neural networks from MATLAB(R)
 #include "neural/myNeuralNetworkBasedOnPCA.h"
 
@@ -127,6 +132,7 @@ int main(int argc, char** argv)
 
 	std::string input_file_name_ = "input.dic";
 	std::string main_dictionary_name_ = "StaticReduction";
+	unsigned int number_threads = 1;
 
 	// Program options from command line
 	{
@@ -134,6 +140,7 @@ int main(int argc, char** argv)
 		po::options_description description("Options for the OpenSMOKEpp_SPARC_ChemistryReduction");
 		description.add_options()
 			("help", "print help messages")
+			("np", po::value<unsigned int>(), "number of threads (default 1")
 			("input", po::value<std::string>(), "name of the file containing the main dictionary (default \"input.dic\")")
 			("dictionary", po::value<std::string>(), "name of the main dictionary to be used (default \"StaticReduction\")");
 
@@ -148,6 +155,9 @@ int main(int argc, char** argv)
 				std::cout << description << std::endl;
 				return OPENSMOKE_SUCCESSFULL_EXIT;
 			}
+
+			if (vm.count("np"))
+				number_threads = vm["np"].as<unsigned int>();
 
 			if (vm.count("input"))
 				input_file_name_ = vm["input"].as<std::string>();
@@ -289,6 +299,49 @@ int main(int argc, char** argv)
 			double tEnd = OpenSMOKE::OpenSMOKEGetCpuTime();
 			std::cout << " * Time to read XML file: " << tEnd - tStart << std::endl;
 		}
+
+		// In case of shared memory calculations
+		// Adjust number of threads if parametric analysis is required
+				
+		#if defined(_OPENMP)
+
+		// Indicates that the number of threads available in subsequent parallel region can be adjusted by the run time.
+		// A value that indicates if the number of threads available in subsequent parallel region can be adjusted by 
+		// the runtime. If nonzero, the runtime can adjust the number of threads, if zero, the runtime will not 
+		// dynamically adjust the number of threads.
+		omp_set_dynamic(0);
+
+		// Info on video
+		std::cout << "-----------------------------------------------------------------------" << std::endl;
+		std::cout << "              Parameteric Analysis using OpenMP threading              " << std::endl;
+		std::cout << "-----------------------------------------------------------------------" << std::endl;
+		std::cout << " * Number of CPUs available               = " << omp_get_num_procs() << std::endl;
+		std::cout << " * Maximum number of threads available    = " << omp_get_max_threads() << std::endl;
+		std::cout << " * Number of threads selected by the user = " << number_threads << std::endl;
+		std::cout << "-----------------------------------------------------------------------" << std::endl;
+
+		// Set the number of threads
+		omp_set_num_threads(number_threads);
+		
+		// Read thermodynamics and kinetics maps
+		std::vector<OpenSMOKE::ThermodynamicsMap_CHEMKIN*>	vector_thermodynamicsMapXML(number_threads);
+		std::vector<OpenSMOKE::KineticsMap_CHEMKIN*>		vector_kineticsMapXML(number_threads);
+
+		for (int j = 0; j < number_threads; j++)
+		{
+			rapidxml::xml_document<> doc;
+			std::vector<char> xml_string;
+			OpenSMOKE::OpenInputFileXML(doc, xml_string, path_kinetics_folder / "kinetics.xml");
+
+			double tStart = OpenSMOKE::OpenSMOKEGetCpuTime();
+			vector_thermodynamicsMapXML[j] = new OpenSMOKE::ThermodynamicsMap_CHEMKIN(doc);
+			vector_kineticsMapXML[j] = new OpenSMOKE::KineticsMap_CHEMKIN(*vector_thermodynamicsMapXML[j], doc);
+			double tEnd = OpenSMOKE::OpenSMOKEGetCpuTime();
+			std::cout << "Time to read XML file: " << tEnd - tStart << std::endl;
+		}
+
+		#endif
+
 
 		std::cout << "Reading input data..." << std::endl;
 
@@ -697,47 +750,112 @@ int main(int argc, char** argv)
 					if (group(j) == jj + 1)
 						group_cluster[jj](items_cluster(jj)++) = j;
 
-			OpenSMOKE::DRGEP drgep(thermodynamicsMap, kineticsMap);
-			drgep.SetKeySpecies(key_species);
-			drgep.SetEpsilon(epsilon);
-			drgep.SetTemperatureThreshold(T_Threshold);
-			//drgep.SetEpsilon(EpsilonDRGEP(T(j)));	// TODO
-			drgep.PrepareKineticGraph(key_species);
-
-			for (int jj = 0; jj < nclusters; jj++)
+			#if defined(_OPENMP)
+			if (number_threads > 1)
 			{
-
-				for (int jLocal = 0; jLocal < group_cluster[jj].size(); jLocal++)
+				std::vector<OpenSMOKE::OpenSMOKEVectorDouble> yy(number_threads);
+				std::vector<OpenSMOKE::OpenSMOKEVectorDouble> xx(number_threads);
+				std::vector<OpenSMOKE::OpenSMOKEVectorDouble> cc(number_threads);
+				for (unsigned int i = 0; i < number_threads; i++)
 				{
-					const int j = group_cluster[jj][jLocal];
+					ChangeDimensions(ns, &yy[i], true);
+					ChangeDimensions(ns, &xx[i], true);
+					ChangeDimensions(ns, &cc[i], true);
+				}
 
-					for (int k = 0; k < ns; k++)
-						y[k + 1] = omega(j, k);
-
-					double MW;
-					thermodynamicsMap->MoleFractions_From_MassFractions(x.GetHandle(), MW, y.GetHandle());
-
-					const double threshold_c = 1e-14;
-					const double cTot = P / PhysicalConstants::R_J_kmol / T(j);
-					OpenSMOKE::Product(cTot, x, &c);
-					for (int k = 1; k <= ns; k++)
-						if (c(k) < threshold_c)	c(k) = 0.;
-
-					drgep.Analysis(T(j), P, c);
-
-					number_important_species(j) = drgep.number_important_species();
-					for (int i = 0; i < number_important_species(j); ++i)
+				std::vector<OpenSMOKE::DRGEP*> drgep(number_threads);
+				for(unsigned int i=0;i< number_threads;i++)
+				{
+					drgep[i] = new OpenSMOKE::DRGEP(vector_thermodynamicsMapXML[i], vector_kineticsMapXML[i]);
+					drgep[i]->SetKeySpecies(key_species);
+					drgep[i]->SetEpsilon(epsilon);
+					drgep[i]->SetTemperatureThreshold(T_Threshold);
+					drgep[i]->PrepareKineticGraph(key_species);
+				}
+				
+				for (int jj = 0; jj < nclusters; jj++)
+				{
+					#pragma omp parallel for
+					for (int jLocal = 0; jLocal < group_cluster[jj].size(); jLocal++)
 					{
-						const unsigned int k = drgep.indices_important_species()[i];
-						important_species(j, k) = 1;
+						unsigned int mytid = omp_get_thread_num();
+						const int j = group_cluster[jj][jLocal];
+
+						for (int k = 0; k < ns; k++)
+							yy[mytid][k + 1] = omega(j, k);
+
+						double MW;
+						vector_thermodynamicsMapXML[mytid]->MoleFractions_From_MassFractions(xx[mytid].GetHandle(), MW, yy[mytid].GetHandle());
+
+						const double threshold_c = 1.e-14;
+						const double cTot = P / PhysicalConstants::R_J_kmol / T(j);
+						OpenSMOKE::Product(cTot, xx[mytid], &cc[mytid]);
+						for (int k = 1; k <= ns; k++)
+							if (cc[mytid][k] < threshold_c)	cc[mytid][k] = 0.;
+
+						drgep[mytid]->Analysis(T(j), P, cc[mytid]);
+
+						number_important_species(j) = drgep[mytid]->number_important_species();
+						for (int i = 0; i < number_important_species(j); ++i)
+						{
+							const unsigned int k = drgep[mytid]->indices_important_species()[i];
+							important_species(j, k) = 1;
+						}
+
+						if (jLocal == 0)
+							std::cout << "Group: " << jj << "/" << nclusters
+							<< " T: " << T(j)
+							<< " Species: " << number_important_species(j)
+							<< " Eps: " << epsilon << std::endl;
+
 					}
+				}
+			}
+			else
+			#endif
+			{
+				OpenSMOKE::DRGEP drgep(thermodynamicsMap, kineticsMap);
+				drgep.SetKeySpecies(key_species);
+				drgep.SetEpsilon(epsilon);
+				drgep.SetTemperatureThreshold(T_Threshold);
+				//drgep.SetEpsilon(EpsilonDRGEP(T(j)));	// TODO
+				drgep.PrepareKineticGraph(key_species);
 
-					if (jLocal == 0)
-						std::cout	<< "Group: " << jj << "/" << nclusters 
-									<< " T: " << T(j) 
-									<< " Species: " << number_important_species(j) 
-									<< " Eps: " << epsilon << std::endl;
+				for (int jj = 0; jj < nclusters; jj++)
+				{
 
+					for (int jLocal = 0; jLocal < group_cluster[jj].size(); jLocal++)
+					{
+						const int j = group_cluster[jj][jLocal];
+
+						for (int k = 0; k < ns; k++)
+							y[k + 1] = omega(j, k);
+
+						double MW;
+						thermodynamicsMap->MoleFractions_From_MassFractions(x.GetHandle(), MW, y.GetHandle());
+
+						const double threshold_c = 1e-14;
+						const double cTot = P / PhysicalConstants::R_J_kmol / T(j);
+						OpenSMOKE::Product(cTot, x, &c);
+						for (int k = 1; k <= ns; k++)
+							if (c(k) < threshold_c)	c(k) = 0.;
+
+						drgep.Analysis(T(j), P, c);
+
+						number_important_species(j) = drgep.number_important_species();
+						for (int i = 0; i < number_important_species(j); ++i)
+						{
+							const unsigned int k = drgep.indices_important_species()[i];
+							important_species(j, k) = 1;
+						}
+
+						if (jLocal == 0)
+							std::cout << "Group: " << jj << "/" << nclusters
+							<< " T: " << T(j)
+							<< " Species: " << number_important_species(j)
+							<< " Eps: " << epsilon << std::endl;
+
+					}
 				}
 			}
 
