@@ -40,7 +40,7 @@
 #endif
 
 // Neural networks from MATLAB(R)
-#include "neural/myNeuralNetworkBasedOnPCA.h"
+//#include "neural/myNeuralNetworkBasedOnPCA.h"
 
 // OpenSMOKE++ Definitions
 #include "OpenSMOKEpp"
@@ -892,6 +892,7 @@ int main(int argc, char** argv)
 		}
 
 		// Testing the network
+		/*
 		if (iTestingNeuralNetwork == true)
 		{
 			Eigen::VectorXd y(nclusters);
@@ -921,6 +922,7 @@ int main(int argc, char** argv)
 			std::cout << "Summary" << std::endl;
 			std::cout << success << " / " << ndata << " / " << double(success) / double(ndata)*100. << std::endl;
 		}
+		*/
 		
 	}
 
