@@ -183,10 +183,12 @@ namespace OpenSMOKE
 			for (int k = 1; k <= kineticsMapXML_.NumberOfReactions(); k++)
 				LocalReactionRates[k] = forward_rr[k] - backward_rr[k];
 
+
 			OpenSMOKE::OpenSMOKEVectorDouble P(thermodynamicsMapXML_.NumberOfSpecies());
 			OpenSMOKE::OpenSMOKEVectorDouble D(thermodynamicsMapXML_.NumberOfSpecies());
 			kineticsMapXML_.ProductionAndDestructionRates(P.GetHandle(), D.GetHandle());
 
+			// Exclude cold cells
 			if (T < T_threshold_)
 			{
 				P = 0.;
@@ -194,6 +196,9 @@ namespace OpenSMOKE
 				LocalReactionRates = 0.;
 			}
 
+			// -------------------------------------------------------------------------
+			// Pepiot-Desjardins, P., & Pitsch, H. (2008). Comb Flame, 154(1-2), 67-81
+			// -------------------------------------------------------------------------
 			for (int i = 0; i < thermodynamicsMapXML_.NumberOfSpecies(); i++)
 				for (int j = 0; j < thermodynamicsMapXML_.NumberOfSpecies(); j++)
 					local_dic_[i][j] = 0.;
@@ -201,45 +206,20 @@ namespace OpenSMOKE
 			for (int j = 0; j < kineticsMapXML_.NumberOfReactions(); j++)
 				for (Eigen::SparseMatrix<double>::InnerIterator it_nu(kinetics_graph_.stoichiometric_matrix_overall(), j); it_nu; ++it_nu)
 					for (Eigen::SparseMatrix<double>::InnerIterator it_bool(kinetics_graph_.stoichiometric_matrix_overall(), j); it_bool; ++it_bool)
-						local_dic_[it_nu.row()][it_bool.row()] += OpenSMOKE::Abs(LocalReactionRates[j + 1] * it_nu.value() * it_bool.value() / it_bool.value());
-
+						local_dic_[it_nu.row()][it_bool.row()] += OpenSMOKE::Abs(LocalReactionRates[j + 1] * it_nu.value());
 
 			for (int i = 0; i < thermodynamicsMapXML_.NumberOfSpecies(); i++)
+			{
 				if (OpenSMOKE::Max(P[i + 1], D[i + 1]) > 1.e-20)
 					for (int j = 0; j < thermodynamicsMapXML_.NumberOfSpecies(); j++)
-						local_dic_[i][j] /= (P[i + 1] + D[i + 1]);
+						local_dic_[i][j] /= (P[i + 1] + D[i + 1]); // Lu & Law use (P+D), Pepiot & Pitsch use Max(P,D)
+				else
+					for (int j = 0; j < thermodynamicsMapXML_.NumberOfSpecies(); j++)
+						local_dic_[i][j] = 0.;
+			}
 
 			for (int i = 0; i < thermodynamicsMapXML_.NumberOfSpecies(); i++)
 				local_dic_[i][i] = 1.;
-/*
-			if (T < 301.)
-			{
-				OpenSMOKE::OpenSMOKEVectorDouble cPlus(thermodynamicsMapXML_.NumberOfSpecies());
-				for (int i = 0; i < thermodynamicsMapXML_.NumberOfSpecies(); i++)
-					cPlus[i + 1] = c[i + 1] + P[i + 1] * 1.e-8;
-
-			//	OpenSMOKE::OpenSMOKEVectorDouble cMinus(thermodynamicsMapXML_.NumberOfSpecies());
-			//	for (int i = 0; i < thermodynamicsMapXML_.NumberOfSpecies(); i++)
-			//		cMinus[i + 1] = c[i + 1] - D[i + 1] * 1.e-8;
-
-			//	OpenSMOKE::OpenSMOKEVectorDouble cStar(thermodynamicsMapXML_.NumberOfSpecies());
-			//	for (int i = 0; i < thermodynamicsMapXML_.NumberOfSpecies(); i++)
-			//		cStar[i + 1] = std::max(std::fabs());
-
-				OpenSMOKE::OpenSMOKEVectorDouble lambdaPlus(thermodynamicsMapXML_.NumberOfSpecies());
-				for (int i = 0; i < thermodynamicsMapXML_.NumberOfSpecies(); i++)
-					lambdaPlus[i + 1] = P[i+1]/(cPlus[i+1]+1.e-20);
-
-
-				std::cout << T << std::endl;
-				for (int i = 0; i < thermodynamicsMapXML_.NumberOfSpecies(); i++)
-					std::cout << i << " " << thermodynamicsMapXML_.NamesOfSpecies()[i] << " " << cPlus[i + 1] << " " << lambdaPlus[i + 1] << std::endl;
-
-//				for (int i = 0; i < thermodynamicsMapXML_.NumberOfSpecies(); i++)
-//					std::cout << i << " " << thermodynamicsMapXML_.NamesOfSpecies()[i] << " " << c[i+1] << " " << P[i + 1] << " " << D[i + 1] << " " << P[i + 1] + D[i + 1] << std::endl;
-				getchar();
-			}
-	*/		
 
 
 			if (iScaling_ == true)
