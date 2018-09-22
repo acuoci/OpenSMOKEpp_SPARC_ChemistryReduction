@@ -38,11 +38,12 @@
 
 namespace OpenSMOKE
 {
-	DRGEP::DRGEP(OpenSMOKE::ThermodynamicsMap_CHEMKIN* thermodynamicsMapXML,
-		OpenSMOKE::KineticsMap_CHEMKIN* kineticsMapXML) :
+	DRGEP::DRGEP(	OpenSMOKE::ThermodynamicsMap_CHEMKIN* thermodynamicsMapXML,
+					OpenSMOKE::KineticsMap_CHEMKIN* kineticsMapXML) :
 
 		thermodynamicsMapXML_(*thermodynamicsMapXML),
-		kineticsMapXML_(*kineticsMapXML)
+		kineticsMapXML_(*kineticsMapXML),
+		kinetics_graph_(*(new KineticsGraph(&thermodynamicsMapXML_, &kineticsMapXML_)))
 	{
 		epsilon_ = 1.e-2;
 		T_threshold_ = 310.;
@@ -118,7 +119,6 @@ namespace OpenSMOKE
 	void DRGEP::PrepareKineticGraph(const std::vector<std::string> names_key_species)
 	{
 		iScaling_ = true;
-		kinetics_graph_.Setup(&thermodynamicsMapXML_, &kineticsMapXML_);
 
 		scaling_factor_.resize(index_key_species_.size());
 		if (iScaling_ == true) scaling_factor_.reserve(5000);
@@ -126,9 +126,8 @@ namespace OpenSMOKE
 		target_oic_.reserve(5000);
 		kinetics_graph_.SetKeySpecies(names_key_species);
 
-		local_dic_.resize(thermodynamicsMapXML_.NumberOfSpecies());
-		for (int j = 0; j < thermodynamicsMapXML_.NumberOfSpecies(); j++)
-			local_dic_[j].resize(thermodynamicsMapXML_.NumberOfSpecies());
+		local_dic_.resize(thermodynamicsMapXML_.NumberOfSpecies(), thermodynamicsMapXML_.NumberOfSpecies());
+		local_dic_.setZero();
 	}
 
 	void DRGEP::ResetKineticGraph()
@@ -177,28 +176,17 @@ namespace OpenSMOKE
 
 		// Calculate
 		{
-			OpenSMOKE::OpenSMOKEVectorDouble R(kineticsMapXML_.NumberOfReactions());
-			OpenSMOKE::OpenSMOKEVectorDouble forward_rr(kineticsMapXML_.NumberOfReactions());
-			OpenSMOKE::OpenSMOKEVectorDouble backward_rr(kineticsMapXML_.NumberOfReactions());
-			OpenSMOKE::OpenSMOKEVectorDouble LocalReactionRates(kineticsMapXML_.NumberOfReactions());
+			OpenSMOKE::OpenSMOKEVectorDouble rnet(kineticsMapXML_.NumberOfReactions());
 
 			// Now we know T, P and composition.
 			// We have to pass those data to the thermodynamic and kinetic maps
-			kineticsMapXML_.SetTemperature(T);
-			kineticsMapXML_.SetPressure(P_Pa);
 			thermodynamicsMapXML_.SetTemperature(T);
 			thermodynamicsMapXML_.SetPressure(P_Pa);
+			kineticsMapXML_.SetTemperature(T);
+			kineticsMapXML_.SetPressure(P_Pa);
 
-			// Now we can calculate (internally) the reaction rates concentrations are needed
 			kineticsMapXML_.ReactionRates(c.GetHandle());
-			kineticsMapXML_.GiveMeReactionRates(R.GetHandle());	// [kmol/m3/s]
-
-			kineticsMapXML_.GetBackwardReactionRates(backward_rr.GetHandle());
-			kineticsMapXML_.GetForwardReactionRates(forward_rr.GetHandle());
-
-			for (int k = 1; k <= kineticsMapXML_.NumberOfReactions(); k++)
-				LocalReactionRates[k] = forward_rr[k] - backward_rr[k];
-
+			kineticsMapXML_.GiveMeReactionRates(rnet.GetHandle());	// [kmol/m3/s]
 
 			OpenSMOKE::OpenSMOKEVectorDouble P(thermodynamicsMapXML_.NumberOfSpecies());
 			OpenSMOKE::OpenSMOKEVectorDouble D(thermodynamicsMapXML_.NumberOfSpecies());
@@ -209,34 +197,30 @@ namespace OpenSMOKE
 			{
 				P = 0.;
 				D = 0.;
-				LocalReactionRates = 0.;
+				rnet = 0.;
 			}
 
 			// -------------------------------------------------------------------------
 			// Pepiot-Desjardins, P., & Pitsch, H. (2008). Comb Flame, 154(1-2), 67-81
 			// -------------------------------------------------------------------------
-			for (int i = 0; i < thermodynamicsMapXML_.NumberOfSpecies(); i++)
-				for (int j = 0; j < thermodynamicsMapXML_.NumberOfSpecies(); j++)
-					local_dic_[i][j] = 0.;
-
+			local_dic_.setZero();
 			for (int j = 0; j < kineticsMapXML_.NumberOfReactions(); j++)
 				for (Eigen::SparseMatrix<double>::InnerIterator it_nu(kinetics_graph_.stoichiometric_matrix_overall(), j); it_nu; ++it_nu)
 					for (Eigen::SparseMatrix<double>::InnerIterator it_bool(kinetics_graph_.stoichiometric_matrix_overall(), j); it_bool; ++it_bool)
-						local_dic_[it_nu.row()][it_bool.row()] += OpenSMOKE::Abs(LocalReactionRates[j + 1] * it_nu.value());
+						local_dic_(it_nu.row(),it_bool.row()) += OpenSMOKE::Abs(rnet[j + 1] * it_nu.value());
 
 			for (int i = 0; i < thermodynamicsMapXML_.NumberOfSpecies(); i++)
 			{
 				if (OpenSMOKE::Max(P[i + 1], D[i + 1]) > 1.e-20)
 					for (int j = 0; j < thermodynamicsMapXML_.NumberOfSpecies(); j++)
-						local_dic_[i][j] /= (P[i + 1] + D[i + 1]); // Lu & Law use (P+D), Pepiot & Pitsch use Max(P,D)
+						local_dic_(i,j) /= (P[i + 1] + D[i + 1]); // Lu & Law use (P+D), Pepiot & Pitsch use Max(P,D)
 				else
 					for (int j = 0; j < thermodynamicsMapXML_.NumberOfSpecies(); j++)
-						local_dic_[i][j] = 0.;
+						local_dic_(i,j) = 0.;
 			}
 
 			for (int i = 0; i < thermodynamicsMapXML_.NumberOfSpecies(); i++)
-				local_dic_[i][i] = 1.;
-
+				local_dic_(i,i) = 1.;
 
 			if (iScaling_ == true)
 			{
@@ -245,10 +229,10 @@ namespace OpenSMOKE
 				{
 					int index = thermodynamicsMapXML_.IndexOfSpecies(names_key_species_[i]) - 1;
 
-					std::vector<double> atomic_scaling;
-					std::vector<double> atom_flux;
-					atomic_scaling.resize(thermodynamicsMapXML_.elements().size());
-					atom_flux.resize(thermodynamicsMapXML_.elements().size());
+					std::vector<double> atomic_scaling(thermodynamicsMapXML_.elements().size());
+					std::vector<double> atom_flux(thermodynamicsMapXML_.elements().size());
+					std::fill(atomic_scaling.begin(), atomic_scaling.end(), 0.);
+					std::fill(atom_flux.begin(), atom_flux.end(), 0.);
 
 					//Calculating P_a_t
 					for (int k = 0; k < thermodynamicsMapXML_.elements().size(); k++)

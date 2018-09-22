@@ -80,6 +80,10 @@ namespace OpenSMOKE
 		*/
 		void SetKeySpecies(const std::vector<unsigned int> indices_key_species);
 
+		/**
+		*@brief Prepares the kinetic graph
+		*@param names_key_species vector containing the indices of target or key species (0-index based)
+		*/
 		void PrepareKineticGraph(const std::vector<std::string> names_key_species);
 
 		/**
@@ -152,7 +156,8 @@ namespace OpenSMOKE
 	private:
 
 		OpenSMOKE::ThermodynamicsMap_CHEMKIN& thermodynamicsMapXML_;	/**< reference to the thermodynamic map */
-		OpenSMOKE::KineticsMap_CHEMKIN& kineticsMapXML_;		/**< reference to the kinetics map */
+		OpenSMOKE::KineticsMap_CHEMKIN& kineticsMapXML_;				/**< reference to the kinetics map */
+		KineticsGraph& kinetics_graph_;
 
 		std::vector<std::string>  names_key_species_;
 		std::vector<unsigned int> index_key_species_;				/**< indices of target or key species (zero-based) */
@@ -169,16 +174,14 @@ namespace OpenSMOKE
 		unsigned int number_important_species_;					/**< current number of important species */
 		unsigned int number_unimportant_reactions_;				/**< number of unimportant reactions */
 
-		std::vector<unsigned int> indices_unimportant_reactions_;		/**< indices of unimportant reactions (zero-based) */
-		std::vector<unsigned int> indices_important_species_;			/**< indices of important species (zero-based) */
-		Eigen::SparseMatrix<double> 			delta_sparse_;		/**< delta matrix (NS x NR) */
+		std::vector<unsigned int>	indices_unimportant_reactions_;		/**< indices of unimportant reactions (zero-based) */
+		std::vector<unsigned int>	indices_important_species_;			/**< indices of important species (zero-based) */
+		Eigen::SparseMatrix<double> delta_sparse_;						/**< delta matrix (NS x NR) */
 
-		KineticsGraph kinetics_graph_;
 		bool iScaling_;
 		std::vector< std::vector<double> > scaling_factor_;
-		std::vector< std::vector< std::vector<double> > > species_dic_;
 		std::vector< std::vector< std::vector<double> > > target_oic_;
-		std::vector< std::vector<double> > local_dic_;
+		Eigen::MatrixXd local_dic_;
 		std::vector<OpenSMOKE::OpenSMOKEVectorDouble> oic_values_;
 	};
 }

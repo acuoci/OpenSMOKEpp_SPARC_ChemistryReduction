@@ -55,8 +55,9 @@ typedef std::pair<int, int> Edge;
 class KineticsGraph
 {
 public:
-  void Setup(	OpenSMOKE::ThermodynamicsMap_CHEMKIN* thermodynamicsMapXML,
-				OpenSMOKE::KineticsMap_CHEMKIN* kineticsMapXML);
+
+  KineticsGraph(	OpenSMOKE::ThermodynamicsMap_CHEMKIN* thermodynamicsMapXML,
+					OpenSMOKE::KineticsMap_CHEMKIN* kineticsMapXML);
   
   //Copy cosntructor
   //KineticsGraph(const KineticsGraph& rhs);
@@ -68,16 +69,17 @@ public:
   inline const Eigen::SparseMatrix<double>& stoichiometric_matrix_products() const      {return stoichiometric_matrix_products_;};
   inline const Eigen::SparseMatrix<double>& stoichiometric_matrix_overall() const       {return stoichiometric_matrix_overall_;};
   
-  void SetWeights(std::vector<std::vector<double> >& local_dic);
+  void SetWeights(const Eigen::MatrixXd& local_dic);
   void SetKeySpecies(const std::vector<std::string>& key_species);
   std::vector<std::vector<double> >& ShortestPaths();
 
 private:
   
-  OpenSMOKE::ThermodynamicsMap_CHEMKIN* thermodynamicsMapXML_;
-  OpenSMOKE::KineticsMap_CHEMKIN* kineticsMapXML_;
+  OpenSMOKE::ThermodynamicsMap_CHEMKIN& thermodynamicsMapXML_;
+  OpenSMOKE::KineticsMap_CHEMKIN& kineticsMapXML_;
   
-  int NS_, NR_;
+  int NS_;
+  int NR_;
   
   DirectedGraph DirectedKineticsGraph_;
   
