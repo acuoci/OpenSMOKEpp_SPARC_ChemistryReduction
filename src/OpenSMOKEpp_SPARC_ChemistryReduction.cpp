@@ -74,14 +74,20 @@ void PrintMatrixOfPresence(	const boost::filesystem::path& path_output_folder,
 							const Eigen::VectorXi& number_important_species,
 							const Eigen::MatrixXi& important_species);
 
+void SelectRetainedSpecies(
+							const unsigned int nclusters,
+							const Eigen::MatrixXi& important_species,
+							const std::vector< std::vector<int> > belonging,
+							const double retained_threshold,
+							Eigen::MatrixXi& retained_species);
+
 void PrintErrorAnalysis(const boost::filesystem::path& path_output_folder,
 						const unsigned int ndata, const unsigned int nclusters,
 						const Eigen::VectorXi& number_important_species,
 						const Eigen::MatrixXi& important_species,
 						const std::vector< std::vector<int> > belonging,
 						const std::vector<std::string> species_names,
-						const double retained_threshold,
-						Eigen::MatrixXi& retained_species);
+						const Eigen::MatrixXi& retained_species);
 
 void WriteKineticMechanisms(const OpenSMOKE::ThermodynamicsMap_CHEMKIN& thermodynamicsMap,
 							const OpenSMOKE::KineticsMap_CHEMKIN& kineticsMap,
@@ -93,7 +99,9 @@ void WriteKineticMechanisms(const OpenSMOKE::ThermodynamicsMap_CHEMKIN& thermody
 
 void SelectImportantReactions(	OpenSMOKE::KineticsMap_CHEMKIN& kineticsMap,
 								Eigen::MatrixXi& retained_species,
-								Eigen::MatrixXi& retained_reactions);
+								Eigen::MatrixXi& retained_reactions,
+								const bool strict_policy_thridbody_reactions,
+								const bool strict_policy_falloff_reactions);
 
 void PreprocessKineticMechanisms(	const unsigned int nclusters,
 									const boost::filesystem::path& path_output_folder,
@@ -277,6 +285,13 @@ int main(int argc, char** argv)
 	if (dictionaries(main_dictionary_name_).CheckOption("@KeySpecies") == true)
 		dictionaries(main_dictionary_name_).ReadOption("@KeySpecies", key_species);
 
+	bool strict_policy_thridbody_reactions = false;
+	if (dictionaries(main_dictionary_name_).CheckOption("@StrictPolicyThirdBody") == true)
+		dictionaries(main_dictionary_name_).ReadBool("@StrictPolicyThirdBody", strict_policy_thridbody_reactions);
+
+	bool strict_policy_falloff_reactions = false;
+	if (dictionaries(main_dictionary_name_).CheckOption("@StrictPolicyFallOff") == true)
+		dictionaries(main_dictionary_name_).ReadBool("@StrictPolicyFallOff", strict_policy_falloff_reactions);
 
 	// Applying Static Reduction
 	{
@@ -693,15 +708,21 @@ int main(int argc, char** argv)
 
 			// Error analysis
 			Eigen::MatrixXi retained_species;
-			PrintErrorAnalysis(	path_drg_output_folder, ndata, nclusters,
-								number_important_species,important_species,
-								belonging, thermodynamicsMap->NamesOfSpecies(),
-								retained_threshold,
-								retained_species);
+			SelectRetainedSpecies(	nclusters,
+									important_species,
+									belonging,
+									retained_threshold,
+									retained_species);
 
 			// Select reactions
 			Eigen::MatrixXi retained_reactions;
-			SelectImportantReactions(*kineticsMap, retained_species, retained_reactions);
+			SelectImportantReactions(*kineticsMap, retained_species, retained_reactions, 
+										strict_policy_thridbody_reactions, strict_policy_falloff_reactions);
+
+			PrintErrorAnalysis(path_drg_output_folder, ndata, nclusters,
+				number_important_species, important_species,
+				belonging, thermodynamicsMap->NamesOfSpecies(),
+				retained_species);
 
 			// Write kinetic mechanisms
 			WriteKineticMechanisms(*thermodynamicsMap, *kineticsMap,
@@ -862,15 +883,22 @@ int main(int argc, char** argv)
 
 			// Error analysis
 			Eigen::MatrixXi retained_species;
-			PrintErrorAnalysis(	path_drgep_output_folder, ndata, nclusters,
-								number_important_species, important_species,
-								belonging, thermodynamicsMap->NamesOfSpecies(),
-								retained_threshold,
-								retained_species);
+			SelectRetainedSpecies(nclusters,
+				important_species,
+				belonging,
+				retained_threshold,
+				retained_species);
 
 			// Select reactions
 			Eigen::MatrixXi retained_reactions;
-			SelectImportantReactions(*kineticsMap, retained_species, retained_reactions);
+			SelectImportantReactions(*kineticsMap, retained_species, retained_reactions,
+				strict_policy_thridbody_reactions, strict_policy_falloff_reactions);
+
+			// Print 
+			PrintErrorAnalysis(	path_drgep_output_folder, ndata, nclusters,
+								number_important_species, important_species,
+								belonging, thermodynamicsMap->NamesOfSpecies(),
+								retained_species);
 
 			// Write kinetic mechanisms
 			WriteKineticMechanisms(*thermodynamicsMap, *kineticsMap,
@@ -1025,14 +1053,12 @@ void PrintMatrixOfPresence(	const boost::filesystem::path& path_output_folder,
 	fOut.close();
 }
 
-void PrintErrorAnalysis(	const boost::filesystem::path& path_output_folder,
-							const unsigned int ndata, const unsigned int nclusters,
-							const Eigen::VectorXi& number_important_species,
-							const Eigen::MatrixXi& important_species,
-							const std::vector< std::vector<int> > belonging,
-							const std::vector<std::string> species_names,
-							const double retained_threshold,
-							Eigen::MatrixXi& retained_species)
+void SelectRetainedSpecies(
+	const unsigned int nclusters,
+	const Eigen::MatrixXi& important_species,
+	const std::vector< std::vector<int> > belonging,
+	const double retained_threshold,
+	Eigen::MatrixXi& retained_species)
 {
 	const unsigned int ns = important_species.cols();
 
@@ -1048,7 +1074,7 @@ void PrintErrorAnalysis(	const boost::filesystem::path& path_output_folder,
 	Eigen::VectorXi retained_005(nclusters); retained_005.setZero();
 	Eigen::VectorXi retained_010(nclusters); retained_010.setZero();
 	Eigen::VectorXi retained_020(nclusters); retained_020.setZero();
-	
+
 	// Analysis of errors
 	for (int i = 0; i < nclusters; i++)
 	{
@@ -1074,7 +1100,7 @@ void PrintErrorAnalysis(	const boost::filesystem::path& path_output_folder,
 			if (ratios(i, k) > 0.05)	retained_005(i)++;
 			if (ratios(i, k) > 0.10)	retained_010(i)++;
 			if (ratios(i, k) > 0.20)	retained_020(i)++;
-			
+
 			if (ratios(i, k) > retained_threshold)
 			{
 				retained(i)++;
@@ -1083,6 +1109,40 @@ void PrintErrorAnalysis(	const boost::filesystem::path& path_output_folder,
 		}
 	}
 
+}
+
+
+void PrintErrorAnalysis(const boost::filesystem::path& path_output_folder,
+	const unsigned int ndata, const unsigned int nclusters,
+	const Eigen::VectorXi& number_important_species,
+	const Eigen::MatrixXi& important_species,
+	const std::vector< std::vector<int> > belonging,
+	const std::vector<std::string> species_names,
+	const Eigen::MatrixXi& retained_species)
+{
+	const unsigned int ns = important_species.cols();
+	Eigen::MatrixXi sums(nclusters, ns); sums.setZero();
+	Eigen::MatrixXd ratios(nclusters, ns); ratios.setZero();
+	Eigen::MatrixXd errors(nclusters, ns); errors.setZero();
+
+	// Analysis of errors
+	for (int i = 0; i < nclusters; i++)
+	{
+		for (int j = 0; j < belonging[i].size(); j++)
+		{
+			const int g = belonging[i][j];
+			for (int k = 0; k < ns; k++)
+				sums(i, k) += important_species(g, k);
+		}
+
+		for (int k = 0; k < ns; k++)
+			ratios(i, k) = double(sums(i, k)) / double(belonging[i].size());
+
+		for (int k = 0; k < ns; k++)
+			if (ratios(i, k) > 0.) errors(i, k) = std::fabs(1. - ratios(i, k));
+	}
+
+	// Sums
 	{
 		boost::filesystem::path filename = path_output_folder / "sums.out";
 		std::ofstream fSums(filename.c_str(), std::ios::out);
@@ -1127,6 +1187,7 @@ void PrintErrorAnalysis(	const boost::filesystem::path& path_output_folder,
 	}
 
 	// Errors
+	/*
 	{
 		Eigen::VectorXd sum_errors(nclusters); sum_errors.setZero();
 		for (int i = 0; i < nclusters; i++)
@@ -1173,6 +1234,7 @@ void PrintErrorAnalysis(	const boost::filesystem::path& path_output_folder,
 			std::cout << std::left << std::fixed << std::setw(7) << retained_000(i);
 		}
 	}
+	*/
 
 	// Similarities between groups
 	{
@@ -1242,9 +1304,9 @@ void PrintErrorAnalysis(	const boost::filesystem::path& path_output_folder,
 				x /= static_cast<double>(belonging[i].size());
 
 			// Uniformity coefficient
-			for (int k = 0; k < ns; k++)
+			for (int k = 0; k < ns; k++) 
 			{
-				if (x(k) != 0)
+				if (x(k) != 0.)
 				{
 					nspecies(i)++;
 					lambda(i) += std::pow(x(k) - 1., 2.);
@@ -1256,8 +1318,8 @@ void PrintErrorAnalysis(	const boost::filesystem::path& path_output_folder,
 				lambda(i) /= static_cast<double>(nspecies(i));
 
 			fUniformity << std::setw(10)  << std::setprecision(3) << std::left << i;
-			fUniformity << std::setw(10) << std::setprecision(3) << std::left << belonging[i].size();
-			fUniformity << std::setw(10)  << std::setprecision(3) << std::left << nspecies(i);
+			fUniformity << std::setw(10)  << std::setprecision(3) << std::left << belonging[i].size();
+			fUniformity << std::setw(10)  << std::setprecision(3) << std::left << retained_species.row(i).sum();;
 			fUniformity << std::setw(10)  << std::setprecision(6) << std::left << std::fixed << lambda(i);
 			fUniformity << std::endl;
 		}
@@ -1334,7 +1396,9 @@ void PrintErrorAnalysis(	const boost::filesystem::path& path_output_folder,
 
 void SelectImportantReactions(OpenSMOKE::KineticsMap_CHEMKIN& kineticsMap,
 	Eigen::MatrixXi& retained_species,
-	Eigen::MatrixXi& retained_reactions)
+	Eigen::MatrixXi& retained_reactions,
+	const bool strict_policy_thridbody_reactions,
+	const bool strict_policy_falloff_reactions)
 {
 	std::cout << " * Selecting important reactions..." << std::endl;
 
@@ -1424,42 +1488,48 @@ void SelectImportantReactions(OpenSMOKE::KineticsMap_CHEMKIN& kineticsMap,
 		for (unsigned int i = 0; i < nclusters; i++)
 		{
 			// First loop
-			for (unsigned int k = 0; k < third_body_reactions.size(); k++)
+			if (strict_policy_thridbody_reactions == true)
 			{
-				unsigned int index_reaction = third_body_reactions[k] - 1;
-				if (retained_reactions(i, index_reaction) == 1)
+				for (unsigned int k = 0; k < third_body_reactions.size(); k++)
 				{
-					std::cout << "Looking for third body reaction: " << index_reaction << std::endl;
-					for (unsigned int j = 0; j < third_body_species[k].size(); j++)
+					unsigned int index_reaction = third_body_reactions[k] - 1;
+					if (retained_reactions(i, index_reaction) == 1)
 					{
-						unsigned int index_species = third_body_species[k][j]-1;
-						if (retained_species(i, index_species) == 0)
+						std::cout << "Looking for third body reaction: " << index_reaction << std::endl;
+						for (unsigned int j = 0; j < third_body_species[k].size(); j++)
 						{
-							std::cout << "Adding species: " << index_species << std::endl;
-							retained_species(i, index_species) = 1;
+							unsigned int index_species = third_body_species[k][j] - 1;
+							if (retained_species(i, index_species) == 0)
+							{
+								std::cout << "Adding species: " << index_species << std::endl;
+								retained_species(i, index_species) = 1;
+							}
 						}
 					}
 				}
 			}
 
 			// Falloff reactions
-			for (unsigned int k = 0; k < kineticsMap.NumberOfFallOffReactions(); k++)
+			if (strict_policy_falloff_reactions == true)
 			{
-				const unsigned int index_reaction = kineticsMap.IndicesOfFalloffReactions()[k] - 1;
-
-				if (retained_reactions(i, index_reaction) == 1)
+				for (unsigned int k = 0; k < kineticsMap.NumberOfFallOffReactions(); k++)
 				{
-					std::cout << "Looking for fall-off reaction: " << index_reaction << std::endl;
+					const unsigned int index_reaction = kineticsMap.IndicesOfFalloffReactions()[k] - 1;
 
-					if (kineticsMap.FallOffIndexOfSingleThirdbodySpecies()[k] == 0)
+					if (retained_reactions(i, index_reaction) == 1)
 					{
-						for (unsigned int j = 0; j < kineticsMap.FallOffIndicesOfThirdbodySpecies()[k].size(); j++)
+						std::cout << "Looking for fall-off reaction: " << index_reaction << std::endl;
+
+						if (kineticsMap.FallOffIndexOfSingleThirdbodySpecies()[k] == 0)
 						{
-							unsigned int index_species = kineticsMap.FallOffIndicesOfThirdbodySpecies()[k][j] - 1;
-							if (retained_species(i, index_species) == 0)
+							for (unsigned int j = 0; j < kineticsMap.FallOffIndicesOfThirdbodySpecies()[k].size(); j++)
 							{
-								std::cout << "Adding species: " << index_species << std::endl;
-								retained_species(i, index_species) = 1;
+								unsigned int index_species = kineticsMap.FallOffIndicesOfThirdbodySpecies()[k][j] - 1;
+								if (retained_species(i, index_species) == 0)
+								{
+									std::cout << "Adding species: " << index_species << std::endl;
+									retained_species(i, index_species) = 1;
+								}
 							}
 						}
 					}
@@ -1518,15 +1588,20 @@ void WriteKineticMechanisms(const OpenSMOKE::ThermodynamicsMap_CHEMKIN& thermody
 	delete thermoreader;
 	delete preprocessor_species_without_transport;
 	
-	std::cout << " * Writing mechanisms..." << std::endl;
+	std::cout << " * Writing mechanisms (new)..." << std::endl;
 	unsigned int nclusters = retained_species.rows();
 	unsigned int ns = retained_species.cols();
 	for (unsigned int i = 0; i < nclusters; i++)
 	{
 		std::vector<bool> is_reduced_species(ns);
-		for (unsigned int k = 0; k<ns; k++)
-			is_reduced_species[k] = true;
-
+		for (unsigned int k = 0; k < ns; k++)
+		{
+			if (retained_species(i, k) == 1)
+				is_reduced_species[k] = true;
+			else
+				is_reduced_species[k] = false;
+		}
+			
 		std::stringstream label; label << i;
 		std::string name = "kinetics." + label.str() + ".CKI";
 		boost::filesystem::path filename = path_folder / name;

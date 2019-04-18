@@ -32,5 +32,8 @@ Dictionary StaticReduction
 		@KeySpecies				CH4 O2 N2;
 		@RetainedThreshold		0.0;
 		@TemperatureThreshold	310 K;
+		
+		@StrictPolicyThirdBody	true;
+		@StrictPolicyFallOff	true;
 }
 

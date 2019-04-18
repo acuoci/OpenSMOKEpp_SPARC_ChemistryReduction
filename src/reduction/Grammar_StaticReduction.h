@@ -105,6 +105,18 @@ namespace OpenSMOKE
 																OpenSMOKE::VECTOR_STRING, 
 																"List of key species", 
 																true) );	
+
+			AddKeyWord(OpenSMOKE::OpenSMOKE_DictionaryKeyWord("@StrictPolicyThirdBody",
+																OpenSMOKE::SINGLE_BOOL,
+																"Strict policy on third-body reactions",
+																true));
+
+			AddKeyWord(OpenSMOKE::OpenSMOKE_DictionaryKeyWord("@StrictPolicyFallOff",
+																OpenSMOKE::SINGLE_BOOL,
+																"Strict policy on fall-off reactions",
+																true));
+
+			
 		}
 	};
 }
